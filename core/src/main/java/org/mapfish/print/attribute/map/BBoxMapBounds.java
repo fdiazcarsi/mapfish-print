@@ -9,6 +9,15 @@ import org.locationtech.jts.geom.Envelope;
 import org.mapfish.print.FloatingPointUtil;
 import org.mapfish.print.map.DistanceUnit;
 import org.mapfish.print.map.Scale;
+import org.mapfish.print.ExceptionUtils;
+import org.geotools.api.referencing.operation.TransformException;
+import org.geotools.geometry.jts.JTS;
+import org.geotools.referencing.CRS;
+import org.geotools.api.referencing.operation.MathTransform;
+import org.geotools.api.referencing.FactoryException;
+
+
+
 
 /**
  * Represent the map bounds with a bounding box.
@@ -112,13 +121,17 @@ public final class BBoxMapBounds extends MapBounds {
 
   @Override
   public Scale getScale(final Rectangle paintArea, final double dpi) {
+      try {
     final ReferencedEnvelope bboxAdjustedToScreen = toReferencedEnvelope(paintArea);
 
-    DistanceUnit projUnit = DistanceUnit.fromProjection(getProjection());
+    CoordinateReferenceSystem crs = getProjection();
+    String crsNameCode = crs.getName().getCode();
+    String crsId = crs.getIdentifiers().iterator().next().toString();
+    DistanceUnit projUnit = DistanceUnit.fromProjection(crs);
 
     double geoWidthInInches;
     if (projUnit == DistanceUnit.DEGREES) {
-      GeodeticCalculator calculator = new GeodeticCalculator(getProjection());
+      GeodeticCalculator calculator = new GeodeticCalculator(crs);
       final double centerY = bboxAdjustedToScreen.centre().y;
       calculator.setStartingGeographicPoint(bboxAdjustedToScreen.getMinX(), centerY);
       calculator.setDestinationGeographicPoint(bboxAdjustedToScreen.getMaxX(), centerY);
@@ -127,12 +140,35 @@ public final class BBoxMapBounds extends MapBounds {
           DistanceUnit.fromString(calculator.getEllipsoid().getAxisUnit().toString());
 
       geoWidthInInches = ellipsoidUnit.convertTo(geoWidthInEllipsoidUnits, DistanceUnit.IN);
+    } else if ("WGS 84 / Pseudo-Mercator".equalsIgnoreCase(crsNameCode) || "EPSG:3857".equalsIgnoreCase(crsId)){
+      GeodeticCalculator calculator = new GeodeticCalculator(crs);
+      final double centerY = bboxAdjustedToScreen.centre().y;
+
+      final MathTransform transform =
+          CRS.findMathTransform(crs, GenericMapAttribute.parseProjection("EPSG:4326", true));
+      final Coordinate start = JTS.transform(new Coordinate(bboxAdjustedToScreen.getMinX(), centerY), null, transform);
+      final Coordinate end = JTS.transform(new Coordinate(bboxAdjustedToScreen.getMaxX(), centerY), null, transform);
+      calculator.setStartingGeographicPoint(start.x, start.y);
+      calculator.setDestinationGeographicPoint(end.x, end.y);
+      final double geoWidthInEllipsoidUnits = calculator.getOrthodromicDistance();
+
+      
+      DistanceUnit ellipsoidUnit =
+          DistanceUnit.fromString(calculator.getEllipsoid().getAxisUnit().toString());
+
+      geoWidthInInches = ellipsoidUnit.convertTo(geoWidthInEllipsoidUnits, DistanceUnit.IN);
+
+      
     } else {
       // (scale * width ) / dpi = geowidith
       geoWidthInInches = projUnit.convertTo(bboxAdjustedToScreen.getWidth(), DistanceUnit.IN);
     }
 
     return new Scale(geoWidthInInches * (dpi / paintArea.getWidth()), projUnit, dpi);
+        } catch (FactoryException | TransformException e) {
+      throw ExceptionUtils.getRuntimeException(e);
+    }
+
   }
 
   @Override

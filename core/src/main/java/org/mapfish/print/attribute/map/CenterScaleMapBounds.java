@@ -62,11 +62,20 @@ public final class CenterScaleMapBounds extends MapBounds {
   @Override
   public ReferencedEnvelope toReferencedEnvelope(final Rectangle paintArea) {
     ReferencedEnvelope bbox;
-    final DistanceUnit projectionUnit = DistanceUnit.fromProjection(getProjection());
+
+    CoordinateReferenceSystem crs = getProjection();
+    String crsNameCode = crs.getName().getCode();
+    String crsId = crs.getIdentifiers().iterator().next().toString();
+    final DistanceUnit projectionUnit = DistanceUnit.fromProjection(crs);
     if (projectionUnit == DistanceUnit.DEGREES) {
       double geoWidthInches = this.scale.getResolutionInInches() * paintArea.width;
       double geoHeightInches = this.scale.getResolutionInInches() * paintArea.height;
       bbox = computeGeodeticBBox(geoWidthInches, geoHeightInches);
+    } else if ("WGS 84 / Pseudo-Mercator".equalsIgnoreCase(crsNameCode) || "EPSG:3857".equalsIgnoreCase(crsId)){
+      double geoWidthInM = this.scale.getResolution() * paintArea.width;
+      double geoHeightInM = this.scale.getResolution() * paintArea.height;
+
+      bbox = compute3857BBox(geoWidthInM, geoHeightInM);
     } else {
       final double centerX = this.center.getOrdinate(0);
       final double centerY = this.center.getOrdinate(1);
@@ -78,7 +87,7 @@ public final class CenterScaleMapBounds extends MapBounds {
       double minGeoY = centerY - (geoHeight / 2.0);
       double maxGeoX = minGeoX + geoWidth;
       double maxGeoY = minGeoY + geoHeight;
-      bbox = new ReferencedEnvelope(minGeoX, maxGeoX, minGeoY, maxGeoY, getProjection());
+      bbox = new ReferencedEnvelope(minGeoX, maxGeoX, minGeoY, maxGeoY, crs);
     }
 
     return bbox;
@@ -175,7 +184,56 @@ public final class CenterScaleMapBounds extends MapBounds {
           rollLatitude(maxGeoY),
           crs);
     } catch (TransformException e) {
-      throw new PrintException("Failed to compute geodetic bbox", e);
+	throw new PrintException("Failed to compute geodetic bbox", e);
+    }
+  }
+
+  private ReferencedEnvelope compute3857BBox(
+      final double geoWidthInM, final double geoHeightInM) {
+    try {
+      CoordinateReferenceSystem crs = getProjection();
+
+      GeodeticCalculator calc = new GeodeticCalculator(crs);
+
+      DistanceUnit ellipsoidUnit =
+          DistanceUnit.fromString(calc.getEllipsoid().getAxisUnit().toString());
+      double geoWidth = DistanceUnit.M.convertTo(geoWidthInM, ellipsoidUnit);
+      double geoHeight = DistanceUnit.M.convertTo(geoHeightInM, ellipsoidUnit);
+
+      Position2D directPosition2D = new Position2D(this.center.x, this.center.y);
+      directPosition2D.setCoordinateReferenceSystem(crs);
+      calc.setStartingPosition(directPosition2D);
+
+      final int west = -90;
+      calc.setDirection(west, geoWidth / 2.0);
+      double minGeoX = calc.getDestinationPosition().getOrdinate(0);
+
+      final int east = 90;
+      calc.setDirection(east, geoWidth / 2.0);
+      double maxGeoX = calc.getDestinationPosition().getOrdinate(0);
+
+      final int south = 180;
+      calc.setDirection(south, geoHeight / 2.0);
+      double southHeight = calc.getOrthodromicDistance();
+//      double southHeight = calc.getDestinationPosition().getOrdinate(1);
+
+      final int north = 0;
+      calc.setDirection(north, geoHeight / 2.0);
+      double northHeight = calc.getOrthodromicDistance();
+//      double northHeight = calc.getDestinationPosition().getOrdinate(1);
+      
+      double halfHeight = (southHeight+northHeight)/2;
+      double minGeoY = calc.getStartingPosition().getOrdinate(1)-halfHeight;
+      double maxGeoY = calc.getStartingPosition().getOrdinate(1)+halfHeight;
+
+      return new ReferencedEnvelope(
+          minGeoX,
+          maxGeoX,
+          minGeoY,
+          maxGeoY,
+          crs);
+    } catch (TransformException e) {
+      throw ExceptionUtils.getRuntimeException(e);
     }
   }
 
