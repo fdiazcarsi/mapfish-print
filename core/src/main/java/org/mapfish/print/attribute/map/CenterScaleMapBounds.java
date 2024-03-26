@@ -184,7 +184,7 @@ public final class CenterScaleMapBounds extends MapBounds {
           rollLatitude(maxGeoY),
           crs);
     } catch (TransformException e) {
-	throw new PrintException("Failed to compute geodetic bbox", e);
+        throw new PrintException("Failed to compute geodetic bbox", e);
     }
   }
 
@@ -233,7 +233,7 @@ public final class CenterScaleMapBounds extends MapBounds {
           maxGeoY,
           crs);
     } catch (TransformException e) {
-      throw ExceptionUtils.getRuntimeException(e);
+        throw new PrintException("Can't compute 3857 BBox", e);            
     }
   }
 

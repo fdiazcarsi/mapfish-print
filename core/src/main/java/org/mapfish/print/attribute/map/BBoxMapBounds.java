@@ -9,12 +9,12 @@ import org.locationtech.jts.geom.Envelope;
 import org.mapfish.print.FloatingPointUtil;
 import org.mapfish.print.map.DistanceUnit;
 import org.mapfish.print.map.Scale;
-import org.mapfish.print.ExceptionUtils;
 import org.geotools.api.referencing.operation.TransformException;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.referencing.CRS;
 import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.api.referencing.FactoryException;
+import org.mapfish.print.PrintException;
 
 
 
@@ -166,7 +166,7 @@ public final class BBoxMapBounds extends MapBounds {
 
     return new Scale(geoWidthInInches * (dpi / paintArea.getWidth()), projUnit, dpi);
         } catch (FactoryException | TransformException e) {
-      throw ExceptionUtils.getRuntimeException(e);
+        throw new PrintException("Can't get scale", e);            
     }
 
   }
