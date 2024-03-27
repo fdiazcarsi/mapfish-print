@@ -14,8 +14,10 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.regex.Pattern;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.geometry.jts.ReferencedEnvelope;
+import org.mapfish.print.EPSG3857Utils;
 import org.mapfish.print.URIUtils;
 import org.mapfish.print.attribute.map.MapBounds;
 import org.mapfish.print.config.Configuration;
@@ -108,15 +110,21 @@ public class WMTSLayer extends AbstractTiledLayer {
           WMTSLayer.this.getName(),
           targetResolution);
 
+      CoordinateReferenceSystem crs = this.bounds.getProjection();
+        double scalingFactor = 1;
+        if (EPSG3857Utils.is3857(crs)){
+            scalingFactor = EPSG3857Utils.computeScalingFactor(bounds);
+        }
+
       for (Matrix m : WMTSLayer.this.param.matrices) {
-        final double resolution = m.getResolution(this.bounds.getProjection());
+        double resolution = m.getResolution(crs);
         LOGGER.debug(
             "Checking tile resolution {} ({} scaling)", resolution, targetResolution / resolution);
         final double delta = Math.abs(resolution - targetResolution);
         if (delta < diff) {
           diff = delta;
           this.matrix = m;
-          WMTSLayer.this.imageBufferScaling = targetResolution / resolution;
+          WMTSLayer.this.imageBufferScaling = (targetResolution / resolution) * scalingFactor;
         }
       }
       LOGGER.debug("The best imageBufferScaling is {}", WMTSLayer.this.imageBufferScaling);
